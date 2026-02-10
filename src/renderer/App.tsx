@@ -282,7 +282,7 @@ export function App() {
     setShowTaskModal(true);
   }
 
-  async function handleCreateTask(name: string, useWorktree: boolean) {
+  async function handleCreateTask(name: string, useWorktree: boolean, autoApprove: boolean) {
     const targetProjectId = taskModalProjectId || activeProjectId;
     const targetProject = projects.find((p) => p.id === targetProjectId);
     if (!targetProject) return;
@@ -318,6 +318,7 @@ export function App() {
       branch,
       path: taskPath,
       useWorktree,
+      autoApprove,
     });
 
     if (saveResp.success && saveResp.data) {
