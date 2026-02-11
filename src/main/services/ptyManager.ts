@@ -41,7 +41,7 @@ async function findClaudePath(): Promise<string | null> {
 /**
  * Build minimal environment for direct CLI spawn (no shell config overhead).
  */
-function buildDirectEnv(): Record<string, string> {
+function buildDirectEnv(isDark: boolean): Record<string, string> {
   const env: Record<string, string> = {
     TERM: 'xterm-256color',
     COLORTERM: 'truecolor',
@@ -49,6 +49,9 @@ function buildDirectEnv(): Record<string, string> {
     HOME: os.homedir(),
     USER: os.userInfo().username,
     PATH: process.env.PATH || '',
+    // Tell CLI apps about terminal background (rxvt convention)
+    // Format: "fg;bg" where higher values = lighter colors
+    COLORFGBG: isDark ? '15;0' : '0;15',
   };
 
   // Auth passthrough
@@ -83,6 +86,7 @@ export async function startDirectPty(options: {
   rows: number;
   autoApprove?: boolean;
   resume?: boolean;
+  isDark?: boolean;
   sender?: WebContents;
 }): Promise<{ reattached: boolean; isDirectSpawn: boolean }> {
   // Re-attach to existing PTY (e.g., after renderer reload)
@@ -115,7 +119,7 @@ export async function startDirectPty(options: {
     args.push('--dangerously-skip-permissions');
   }
 
-  const env = buildDirectEnv();
+  const env = buildDirectEnv(options.isDark ?? true);
 
   const proc = pty.spawn(claudePath, args, {
     name: 'xterm-256color',

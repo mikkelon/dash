@@ -26,6 +26,7 @@ export function registerPtyIpc(): void {
         rows: number;
         autoApprove?: boolean;
         resume?: boolean;
+        isDark?: boolean;
       },
     ) => {
       try {

@@ -10,10 +10,10 @@ const SIGWINCH_MAX_RETRIES = 2;
 const MEMORY_LIMIT_BYTES = 128 * 1024 * 1024; // 128MB soft limit
 
 const darkTheme = {
-  background: '#1a1a1a',
+  background: '#1f1f1f',
   foreground: '#d4d4d4',
   cursor: '#d4d4d4',
-  cursorAccent: '#1a1a1a',
+  cursorAccent: '#1f1f1f',
   selectionBackground: '#3a3a5a',
   black: '#000000',
   red: '#e06c75',
@@ -34,10 +34,10 @@ const darkTheme = {
 };
 
 const lightTheme = {
-  background: '#ffffff',
+  background: '#fafafa',
   foreground: '#383a42',
   cursor: '#383a42',
-  cursorAccent: '#ffffff',
+  cursorAccent: '#fafafa',
   selectionBackground: '#bfceff',
   black: '#383a42',
   red: '#e45649',
@@ -78,18 +78,20 @@ export class TerminalSessionManager {
   private boundBeforeUnload: (() => void) | null = null;
   private suppressCursorShow = false;
   private attachGeneration = 0;
+  private isDark = true;
 
-  constructor(opts: { id: string; cwd: string; autoApprove?: boolean }) {
+  constructor(opts: { id: string; cwd: string; autoApprove?: boolean; isDark?: boolean }) {
     this.id = opts.id;
     this.cwd = opts.cwd;
     this.autoApprove = opts.autoApprove ?? false;
+    this.isDark = opts.isDark ?? true;
 
     this.terminal = new Terminal({
       scrollback: 100_000,
       fontSize: 13,
       lineHeight: 1.2,
       allowProposedApi: true,
-      theme: darkTheme,
+      theme: this.isDark ? darkTheme : lightTheme,
       cursorBlink: true,
     });
 
@@ -325,7 +327,20 @@ export class TerminalSessionManager {
   }
 
   setTheme(isDark: boolean) {
+    this.isDark = isDark;
     this.terminal.options.theme = isDark ? darkTheme : lightTheme;
+
+    // Trigger SIGWINCH so the TUI redraws with the new ANSI palette.
+    // rows+1 then rows forces the PTY process to handle SIGWINCH.
+    if (this.ptyStarted && this.opened) {
+      const dims = this.fitAddon.proposeDimensions();
+      if (dims && dims.cols > 0 && dims.rows > 0) {
+        window.electronAPI.ptyResize({ id: this.id, cols: dims.cols, rows: dims.rows + 1 });
+        setTimeout(() => {
+          window.electronAPI.ptyResize({ id: this.id, cols: dims.cols, rows: dims.rows });
+        }, 50);
+      }
+    }
   }
 
   /** Public wrapper for saving snapshot (used by SessionRegistry on app quit). */
@@ -349,7 +364,9 @@ export class TerminalSessionManager {
     }
   }
 
-  private async startPty(resume: boolean = false): Promise<{ reattached: boolean; isDirectSpawn: boolean }> {
+  private async startPty(
+    resume: boolean = false,
+  ): Promise<{ reattached: boolean; isDirectSpawn: boolean }> {
     const dims = this.fitAddon.proposeDimensions();
     const cols = dims?.cols ?? 120;
     const rows = dims?.rows ?? 30;
@@ -364,6 +381,7 @@ export class TerminalSessionManager {
       rows,
       autoApprove: this.autoApprove,
       resume,
+      isDark: this.isDark,
     });
 
     if (resp.success) {

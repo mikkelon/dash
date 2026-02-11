@@ -9,6 +9,7 @@ interface AttachOptions {
 
 class SessionRegistryImpl {
   private sessions = new Map<string, TerminalSessionManager>();
+  private _isDark = true;
 
   attach(opts: AttachOptions): TerminalSessionManager {
     let session = this.sessions.get(opts.id);
@@ -18,6 +19,7 @@ class SessionRegistryImpl {
         id: opts.id,
         cwd: opts.cwd,
         autoApprove: opts.autoApprove,
+        isDark: this._isDark,
       });
       this.sessions.set(opts.id, session);
     }
@@ -50,6 +52,7 @@ class SessionRegistryImpl {
   }
 
   setAllThemes(isDark: boolean): void {
+    this._isDark = isDark;
     for (const session of this.sessions.values()) {
       session.setTheme(isDark);
     }

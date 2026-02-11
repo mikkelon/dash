@@ -68,6 +68,7 @@ export interface ElectronAPI {
     rows: number;
     autoApprove?: boolean;
     resume?: boolean;
+    isDark?: boolean;
   }) => Promise<IpcResponse<{ reattached: boolean; isDirectSpawn: boolean }>>;
   ptyStart: (args: {
     id: string;
