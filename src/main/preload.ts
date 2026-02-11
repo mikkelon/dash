@@ -83,6 +83,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     };
   },
 
+  // Settings
+  setDesktopNotification: (opts: { enabled: boolean; message: string }) =>
+    ipcRenderer.send('app:setDesktopNotification', opts),
+
   // Git detection
   detectGit: (folderPath: string) => ipcRenderer.invoke('app:detectGit', folderPath),
   detectClaude: () => ipcRenderer.invoke('app:detectClaude'),

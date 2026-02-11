@@ -1,8 +1,11 @@
 import * as os from 'os';
+import * as fs from 'fs';
+import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import type { WebContents } from 'electron';
 import { activityMonitor } from './ActivityMonitor';
+import { hookServer } from './HookServer';
 
 const execFileAsync = promisify(execFile);
 
@@ -14,6 +17,22 @@ interface PtyRecord {
 }
 
 const ptys = new Map<string, PtyRecord>();
+
+// Global setting: include macOS desktop notification in Stop hook
+let desktopNotificationEnabled = false;
+let desktopNotificationMessage = 'Claude finished and needs your attention';
+
+export function setDesktopNotification(opts: { enabled: boolean; message: string }): void {
+  desktopNotificationEnabled = opts.enabled;
+  desktopNotificationMessage = opts.message || 'Claude finished and needs your attention';
+
+  // Rewrite hook settings for all active direct-spawn PTYs
+  for (const [id, record] of ptys) {
+    if (record.isDirectSpawn) {
+      writeHookSettings(record.cwd, id);
+    }
+  }
+}
 
 // Lazy-load node-pty to avoid native binding issues at startup
 let ptyModule: typeof import('node-pty') | null = null;
@@ -77,6 +96,79 @@ function buildDirectEnv(isDark: boolean): Record<string, string> {
 }
 
 /**
+ * Write .claude/settings.local.json with Stop and UserPromptSubmit hooks
+ * that signal our local HookServer when Claude finishes or starts a turn.
+ */
+function writeHookSettings(cwd: string, ptyId: string): void {
+  const port = hookServer.port;
+  if (port === 0) return;
+
+  const claudeDir = path.join(cwd, '.claude');
+  const settingsPath = path.join(claudeDir, 'settings.local.json');
+  const curlBase = `curl -s --connect-timeout 2 http://127.0.0.1:${port}`;
+
+  const stopEntries: { hooks: { type: string; command: string }[] }[] = [
+    { hooks: [{ type: 'command', command: `${curlBase}/hook/stop?ptyId=${ptyId}` }] },
+  ];
+  if (desktopNotificationEnabled) {
+    // Escape double quotes in the user's message for AppleScript
+    const safeMsg = desktopNotificationMessage.replace(/"/g, '\\"');
+    stopEntries.push({
+      hooks: [
+        {
+          type: 'command',
+          command: `osascript -e 'display notification "${safeMsg}" with title "Dash"'`,
+        },
+      ],
+    });
+  }
+
+  const hookSettings = {
+    hooks: {
+      Stop: stopEntries,
+      UserPromptSubmit: [
+        {
+          hooks: [{ type: 'command', command: `${curlBase}/hook/busy?ptyId=${ptyId}` }],
+        },
+      ],
+    },
+  };
+
+  try {
+    if (!fs.existsSync(claudeDir)) {
+      fs.mkdirSync(claudeDir, { recursive: true });
+    }
+
+    // Merge with existing settings to preserve non-hook config
+    let existing: Record<string, unknown> = {};
+    if (fs.existsSync(settingsPath)) {
+      try {
+        existing = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+      } catch {
+        // Corrupted — overwrite
+      }
+    }
+
+    const merged = {
+      ...existing,
+      hooks: {
+        ...(existing.hooks && typeof existing.hooks === 'object'
+          ? (existing.hooks as Record<string, unknown>)
+          : {}),
+        ...hookSettings.hooks,
+      },
+    };
+
+    fs.writeFileSync(settingsPath, JSON.stringify(merged, null, 2) + '\n');
+    console.error(
+      `[writeHookSettings] Wrote ${settingsPath} (desktopNotification=${desktopNotificationEnabled})`,
+    );
+  } catch (err) {
+    console.error('[writeHookSettings] Failed:', err);
+  }
+}
+
+/**
  * Spawn Claude CLI directly (fast path, bypasses shell config).
  */
 export async function startDirectPty(options: {
@@ -120,6 +212,8 @@ export async function startDirectPty(options: {
   }
 
   const env = buildDirectEnv(options.isDark ?? true);
+
+  writeHookSettings(options.cwd, options.id);
 
   const proc = pty.spawn(claudePath, args, {
     name: 'xterm-256color',

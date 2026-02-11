@@ -44,6 +44,23 @@ export function App() {
   const [notificationSound, setNotificationSound] = useState<NotificationSound>(() => {
     return (localStorage.getItem('notificationSound') as NotificationSound) || 'off';
   });
+  const [desktopNotification, setDesktopNotification] = useState(() => {
+    return localStorage.getItem('desktopNotification') === 'true';
+  });
+  const [desktopNotificationMessage, setDesktopNotificationMessage] = useState(() => {
+    return (
+      localStorage.getItem('desktopNotificationMessage') ||
+      'Claude finished and needs your attention'
+    );
+  });
+
+  // Sync desktop notification settings to main process
+  useEffect(() => {
+    window.electronAPI.setDesktopNotification?.({
+      enabled: desktopNotification,
+      message: desktopNotificationMessage,
+    });
+  }, [desktopNotification, desktopNotificationMessage]);
 
   // Activity state — keys are PTY IDs that have active sessions
   const [taskActivity, setTaskActivity] = useState<Record<string, 'busy' | 'idle'>>({});
@@ -662,6 +679,16 @@ export function App() {
             setNotificationSound(v);
             localStorage.setItem('notificationSound', v);
             if (v !== 'off') playNotificationSound(v);
+          }}
+          desktopNotification={desktopNotification}
+          onDesktopNotificationChange={(v) => {
+            setDesktopNotification(v);
+            localStorage.setItem('desktopNotification', String(v));
+          }}
+          desktopNotificationMessage={desktopNotificationMessage}
+          onDesktopNotificationMessageChange={(v) => {
+            setDesktopNotificationMessage(v);
+            localStorage.setItem('desktopNotificationMessage', v);
           }}
           keybindings={keybindings}
           onKeybindingsChange={(b) => {

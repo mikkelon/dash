@@ -17,6 +17,10 @@ interface SettingsModalProps {
   onDiffContextLinesChange: (value: number | null) => void;
   notificationSound: NotificationSound;
   onNotificationSoundChange: (value: NotificationSound) => void;
+  desktopNotification: boolean;
+  onDesktopNotificationChange: (value: boolean) => void;
+  desktopNotificationMessage: string;
+  onDesktopNotificationMessageChange: (value: string) => void;
   keybindings: KeyBindingMap;
   onKeybindingsChange: (bindings: KeyBindingMap) => void;
   onClose: () => void;
@@ -105,6 +109,10 @@ export function SettingsModal({
   onDiffContextLinesChange,
   notificationSound,
   onNotificationSoundChange,
+  desktopNotification,
+  onDesktopNotificationChange,
+  desktopNotificationMessage,
+  onDesktopNotificationMessageChange,
   keybindings,
   onKeybindingsChange,
   onClose,
@@ -280,6 +288,46 @@ export function SettingsModal({
                 </div>
                 <p className="text-[10px] text-muted-foreground/40 mt-2">
                   Play a sound when a task finishes and needs attention
+                </p>
+              </div>
+
+              {/* Desktop Notification */}
+              <div>
+                <label className="block text-[12px] font-medium text-muted-foreground/70 mb-3">
+                  Desktop Notifications
+                </label>
+                <button
+                  onClick={() => onDesktopNotificationChange(!desktopNotification)}
+                  className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg text-[13px] border transition-all duration-150 ${
+                    desktopNotification
+                      ? 'border-primary/40 bg-primary/8 text-foreground ring-1 ring-primary/20'
+                      : 'border-border/60 text-muted-foreground/60 hover:bg-accent/40 hover:text-foreground'
+                  }`}
+                >
+                  <div
+                    className={`w-8 h-[18px] rounded-full relative transition-colors duration-150 flex-shrink-0 ${
+                      desktopNotification ? 'bg-primary' : 'bg-border'
+                    }`}
+                  >
+                    <div
+                      className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white shadow-sm transition-transform duration-150 ${
+                        desktopNotification ? 'translate-x-[16px]' : 'translate-x-[2px]'
+                      }`}
+                    />
+                  </div>
+                  Show macOS notification when a task finishes
+                </button>
+                {desktopNotification && (
+                  <input
+                    type="text"
+                    value={desktopNotificationMessage}
+                    onChange={(e) => onDesktopNotificationMessageChange(e.target.value)}
+                    placeholder="Notification message..."
+                    className="mt-2 w-full px-3 py-2 rounded-lg text-[12px] border border-border/60 bg-transparent text-foreground placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-primary/40 focus:border-primary/40 transition-all duration-150"
+                  />
+                )}
+                <p className="text-[10px] text-muted-foreground/40 mt-2">
+                  Takes effect for newly started tasks
                 </p>
               </div>
 

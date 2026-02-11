@@ -61,6 +61,14 @@ export function registerAppIpc(): void {
     }
   });
 
+  ipcMain.on(
+    'app:setDesktopNotification',
+    async (_event, opts: { enabled: boolean; message: string }) => {
+      const { setDesktopNotification } = await import('../services/ptyManager');
+      setDesktopNotification(opts);
+    },
+  );
+
   ipcMain.handle('app:detectClaude', async () => {
     try {
       // Import cached result from main

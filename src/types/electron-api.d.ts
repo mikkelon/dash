@@ -100,6 +100,9 @@ export interface ElectronAPI {
   // App lifecycle
   onBeforeQuit: (callback: () => void) => () => void;
 
+  // Settings
+  setDesktopNotification: (opts: { enabled: boolean; message: string }) => void;
+
   // Git detection
   detectGit: (
     folderPath: string,

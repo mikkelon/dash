@@ -28,6 +28,28 @@ class ActivityMonitorImpl {
     this.emitAll();
   }
 
+  /**
+   * Immediately transition a PTY to idle.
+   * Called by HookServer when a Claude Code Stop hook fires.
+   */
+  setIdle(ptyId: string): void {
+    const activity = this.activities.get(ptyId);
+    if (!activity || activity.state === 'idle') return;
+    activity.state = 'idle';
+    this.emitAll();
+  }
+
+  /**
+   * Immediately transition a PTY to busy.
+   * Called by HookServer when a Claude Code UserPromptSubmit hook fires.
+   */
+  setBusy(ptyId: string): void {
+    const activity = this.activities.get(ptyId);
+    if (!activity || activity.state === 'busy') return;
+    activity.state = 'busy';
+    this.emitAll();
+  }
+
   unregister(ptyId: string): void {
     if (this.activities.delete(ptyId)) {
       this.emitAll();
@@ -78,6 +100,9 @@ class ActivityMonitorImpl {
         changed = true;
         continue;
       }
+
+      // Direct-spawn PTYs are driven by Claude Code hooks, not polling
+      if (activity.isDirectSpawn) continue;
 
       const isWorking = this.hasActiveWork(activity.pid, activity.isDirectSpawn, childMap);
       const newState: ActivityState = isWorking ? 'busy' : 'idle';

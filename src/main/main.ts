@@ -66,6 +66,10 @@ app.whenReady().then(async () => {
   const { DatabaseService } = await import('./services/DatabaseService');
   await DatabaseService.initialize();
 
+  // Start hook server (must be ready before any PTY spawns)
+  const { hookServer } = await import('./services/HookServer');
+  await hookServer.start();
+
   // Register IPC handlers
   const { registerAllIpc } = await import('./ipc');
   registerAllIpc();
@@ -154,6 +158,14 @@ app.on('before-quit', async () => {
     }
     // Give renderer a moment to save snapshots
     await new Promise((resolve) => setTimeout(resolve, 200));
+  } catch {
+    // Best effort
+  }
+
+  // Stop hook server
+  try {
+    const { hookServer } = await import('./services/HookServer');
+    hookServer.stop();
   } catch {
     // Best effort
   }
