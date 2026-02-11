@@ -21,7 +21,9 @@ export function App() {
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [taskModalProjectId, setTaskModalProjectId] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [theme, setTheme] = useState<'light' | 'dark'>('dark');
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    return (localStorage.getItem('theme') as 'light' | 'dark') || 'dark';
+  });
   const [diffContextLines, setDiffContextLines] = useState<number | null>(() => {
     const stored = localStorage.getItem('diffContextLines');
     if (stored === null || stored === 'null') return null; // null = full file
@@ -194,19 +196,30 @@ export function App() {
       }
       if (keybindings.focusTerminal && matchesBinding(e, keybindings.focusTerminal)) {
         e.preventDefault();
-        const term = document.querySelector('.terminal-container .xterm-helper-textarea') as HTMLTextAreaElement | null;
+        const term = document.querySelector(
+          '.terminal-container .xterm-helper-textarea',
+        ) as HTMLTextAreaElement | null;
         term?.focus();
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [activeProjectTasks, activeTaskId, activeProjectId, showDiff, showSettings, showTaskModal, keybindings]);
+  }, [
+    activeProjectTasks,
+    activeTaskId,
+    activeProjectId,
+    showDiff,
+    showSettings,
+    showTaskModal,
+    keybindings,
+  ]);
 
   const cycleTask = useCallback(
     (direction: 1 | -1) => {
       if (activeProjectTasks.length === 0) return;
       const currentIdx = activeProjectTasks.findIndex((t) => t.id === activeTaskId);
-      const nextIdx = (currentIdx + direction + activeProjectTasks.length) % activeProjectTasks.length;
+      const nextIdx =
+        (currentIdx + direction + activeProjectTasks.length) % activeProjectTasks.length;
       setActiveTaskId(activeProjectTasks[nextIdx].id);
     },
     [activeProjectTasks, activeTaskId],
@@ -469,7 +482,10 @@ export function App() {
 
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden">
-      <div className="titlebar-drag h-[38px] flex-shrink-0 border-b border-border/40" style={{ background: 'hsl(var(--surface-1))' }} />
+      <div
+        className="titlebar-drag h-[38px] flex-shrink-0 border-b border-border/40"
+        style={{ background: 'hsl(var(--surface-1))' }}
+      />
 
       <PanelGroup direction="horizontal" className="flex-1">
         <Panel
@@ -531,16 +547,17 @@ export function App() {
       </PanelGroup>
 
       {showTaskModal && (
-        <TaskModal
-          onClose={() => setShowTaskModal(false)}
-          onCreate={handleCreateTask}
-        />
+        <TaskModal onClose={() => setShowTaskModal(false)} onCreate={handleCreateTask} />
       )}
 
       {showSettings && (
         <SettingsModal
           theme={theme}
-          onThemeChange={setTheme}
+          onThemeChange={(t) => {
+            setTheme(t);
+            localStorage.setItem('theme', t);
+            sessionRegistry.setAllThemes(t === 'dark');
+          }}
           diffContextLines={diffContextLines}
           onDiffContextLinesChange={(v) => {
             setDiffContextLines(v);

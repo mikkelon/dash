@@ -45,6 +45,12 @@ class SessionRegistryImpl {
     }
   }
 
+  setAllThemes(isDark: boolean): void {
+    for (const session of this.sessions.values()) {
+      session.setTheme(isDark);
+    }
+  }
+
   async disposeAll(): Promise<void> {
     for (const [id, session] of this.sessions) {
       await session.dispose();
