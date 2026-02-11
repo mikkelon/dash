@@ -37,6 +37,10 @@ class SessionRegistryImpl {
     return this.sessions.get(id);
   }
 
+  has(id: string): boolean {
+    return this.sessions.has(id);
+  }
+
   async dispose(id: string): Promise<void> {
     const session = this.sessions.get(id);
     if (session) {

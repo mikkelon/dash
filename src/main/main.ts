@@ -21,6 +21,7 @@ function fixPath(): void {
     additions.push('/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin');
     // Try to get login shell PATH
     try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { execSync } = require('child_process');
       const shellPath = execSync('zsh -ilc "echo $PATH"', {
         encoding: 'utf-8',
@@ -72,6 +73,10 @@ app.whenReady().then(async () => {
   // Create main window
   const { createWindow } = await import('./window');
   mainWindow = createWindow();
+
+  // Start activity monitor — must happen after window creation
+  const { activityMonitor } = await import('./services/ActivityMonitor');
+  activityMonitor.start(mainWindow.webContents);
 
   // Cleanup orphaned reserve worktrees (background, non-blocking)
   setTimeout(async () => {
@@ -127,6 +132,8 @@ app.on('activate', async () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     const { createWindow } = await import('./window');
     mainWindow = createWindow();
+    const { activityMonitor } = await import('./services/ActivityMonitor');
+    activityMonitor.start(mainWindow.webContents);
   }
 });
 
@@ -144,7 +151,7 @@ app.on('before-quit', async () => {
     // Best effort
   }
 
-  // Kill all PTYs
+  // Kill all PTYs (also stops activity monitor)
   try {
     const { killAll } = await import('./services/ptyManager');
     killAll();

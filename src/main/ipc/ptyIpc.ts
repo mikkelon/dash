@@ -12,6 +12,7 @@ import {
   killByOwner,
 } from '../services/ptyManager';
 import { terminalSnapshotService } from '../services/TerminalSnapshotService';
+import { activityMonitor } from '../services/ActivityMonitor';
 
 export function registerPtyIpc(): void {
   ipcMain.handle(
@@ -102,6 +103,11 @@ export function registerPtyIpc(): void {
     } catch (error) {
       return { success: false, data: false, error: String(error) };
     }
+  });
+
+  // Activity monitor
+  ipcMain.handle('pty:activity:getAll', () => {
+    return { success: true, data: activityMonitor.getAll() };
   });
 }
 

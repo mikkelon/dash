@@ -1,8 +1,8 @@
 import * as os from 'os';
-import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import type { WebContents } from 'electron';
+import { activityMonitor } from './ActivityMonitor';
 
 const execFileAsync = promisify(execFile);
 
@@ -118,6 +118,7 @@ export async function startDirectPty(options: {
   };
 
   ptys.set(options.id, record);
+  activityMonitor.register(options.id, proc.pid, true);
 
   // Forward output to renderer
   proc.onData((data: string) => {
@@ -127,6 +128,7 @@ export async function startDirectPty(options: {
   });
 
   proc.onExit(({ exitCode, signal }: { exitCode: number; signal?: number }) => {
+    activityMonitor.unregister(options.id);
     if (record.owner && !record.owner.isDestroyed()) {
       record.owner.send(`pty:exit:${options.id}`, { exitCode, signal });
     }
@@ -174,6 +176,7 @@ export async function startPty(options: {
   };
 
   ptys.set(options.id, record);
+  activityMonitor.register(options.id, proc.pid, false);
 
   proc.onData((data: string) => {
     if (record.owner && !record.owner.isDestroyed()) {
@@ -182,6 +185,7 @@ export async function startPty(options: {
   });
 
   proc.onExit(({ exitCode, signal }: { exitCode: number; signal?: number }) => {
+    activityMonitor.unregister(options.id);
     if (record.owner && !record.owner.isDestroyed()) {
       record.owner.send(`pty:exit:${options.id}`, { exitCode, signal });
     }
@@ -222,7 +226,8 @@ export function killPty(id: string): void {
     try {
       record.proc.kill();
     } catch {
-      // Already dead
+      // Already dead — onExit may not fire, so clean up manually
+      activityMonitor.unregister(id);
     }
     ptys.delete(id);
   }
@@ -232,7 +237,7 @@ export function killPty(id: string): void {
  * Kill all PTYs (on app quit).
  */
 export function killAll(): void {
-  for (const [id, record] of ptys) {
+  for (const [, record] of ptys) {
     try {
       record.proc.kill();
     } catch {
@@ -240,6 +245,8 @@ export function killAll(): void {
     }
   }
   ptys.clear();
+  // Bulk cleanup — don't rely on onExit during shutdown
+  activityMonitor.stop();
 }
 
 /**
@@ -251,7 +258,7 @@ export function killByOwner(owner: WebContents): void {
       try {
         record.proc.kill();
       } catch {
-        // Already dead
+        activityMonitor.unregister(id);
       }
       ptys.delete(id);
     }

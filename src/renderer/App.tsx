@@ -31,6 +31,9 @@ export function App() {
   });
   const [keybindings, setKeybindings] = useState<KeyBindingMap>(loadKeybindings);
 
+  // Activity state — keys are PTY IDs that have active sessions
+  const [taskActivity, setTaskActivity] = useState<Record<string, 'busy' | 'idle'>>({});
+
   // Git state
   const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
   const [gitLoading, setGitLoading] = useState(false);
@@ -72,6 +75,15 @@ export function App() {
     return window.electronAPI.onBeforeQuit(() => {
       sessionRegistry.saveAllSnapshots();
     });
+  }, []);
+
+  // Activity monitor — subscribe first, then query to avoid race
+  useEffect(() => {
+    const unsubscribe = window.electronAPI.onPtyActivity(setTaskActivity);
+    window.electronAPI.ptyGetAllActivity().then((resp) => {
+      if (resp.success && resp.data) setTaskActivity(resp.data);
+    });
+    return unsubscribe;
   }, []);
 
   // Load tasks for all projects when projects change
@@ -519,6 +531,7 @@ export function App() {
             onOpenSettings={() => setShowSettings(true)}
             collapsed={sidebarCollapsed}
             onToggleCollapse={toggleSidebar}
+            taskActivity={taskActivity}
           />
         </Panel>
         <PanelResizeHandle disabled={sidebarCollapsed} className="w-[1px] bg-border/40" />

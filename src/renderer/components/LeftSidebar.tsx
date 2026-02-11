@@ -29,6 +29,7 @@ interface LeftSidebarProps {
   onOpenSettings: () => void;
   collapsed: boolean;
   onToggleCollapse: () => void;
+  taskActivity: Record<string, 'busy' | 'idle'>;
 }
 
 export function LeftSidebar({
@@ -46,6 +47,7 @@ export function LeftSidebar({
   onOpenSettings,
   collapsed,
   onToggleCollapse,
+  taskActivity,
 }: LeftSidebarProps) {
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(new Set());
 
@@ -256,9 +258,11 @@ export function LeftSidebar({
                               <div className="relative flex-shrink-0">
                                 <div
                                   className={`w-[6px] h-[6px] rounded-full ${
-                                    task.status === 'active'
-                                      ? 'bg-[hsl(var(--git-added))] status-pulse'
-                                      : 'bg-muted-foreground/25'
+                                    taskActivity[task.id] === 'busy'
+                                      ? 'bg-amber-400 status-pulse'
+                                      : taskActivity[task.id] === 'idle'
+                                        ? 'bg-[hsl(var(--git-added))]'
+                                        : 'bg-muted-foreground/25'
                                   }`}
                                 />
                               </div>
