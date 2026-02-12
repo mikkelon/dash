@@ -62,17 +62,36 @@ export function DeleteTaskModal({ task, onClose, onConfirm }: DeleteTaskModalPro
               <CircleCheck
                 checked={deleteWorktreeDir}
                 onChange={setDeleteWorktreeDir}
-                label="Delete worktree directory"
+                label={
+                  <>
+                    Delete worktree directory{' '}
+                    <span className="text-muted-foreground/50 font-normal">
+                      {task.path.split('/').slice(-3).join('/')}
+                    </span>
+                  </>
+                }
               />
               <CircleCheck
                 checked={deleteLocalBranch}
                 onChange={setDeleteLocalBranch}
-                label="Delete local branch"
+                label={
+                  <>
+                    Delete local branch{' '}
+                    <span className="text-muted-foreground/50 font-normal">{task.branch}</span>
+                  </>
+                }
               />
               <CircleCheck
                 checked={deleteRemoteBranch}
                 onChange={setDeleteRemoteBranch}
-                label="Delete remote branch"
+                label={
+                  <>
+                    Delete remote branch{' '}
+                    <span className="text-muted-foreground/50 font-normal">
+                      origin/{task.branch}
+                    </span>
+                  </>
+                }
               />
             </div>
           )}

@@ -4,7 +4,7 @@ import { Check } from 'lucide-react';
 interface CircleCheckProps {
   checked: boolean;
   onChange: (checked: boolean) => void;
-  label: string;
+  label: React.ReactNode;
   className?: string;
 }
 
