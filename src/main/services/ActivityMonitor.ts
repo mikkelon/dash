@@ -22,7 +22,7 @@ class ActivityMonitorImpl {
   register(ptyId: string, pid: number, isDirectSpawn: boolean): void {
     this.activities.set(ptyId, {
       pid,
-      state: isDirectSpawn ? 'busy' : 'idle',
+      state: 'idle',
       isDirectSpawn,
     });
     this.emitAll();
