@@ -494,7 +494,12 @@ export function App() {
     setShowTaskModal(true);
   }
 
-  async function handleCreateTask(name: string, useWorktree: boolean, autoApprove: boolean) {
+  async function handleCreateTask(
+    name: string,
+    useWorktree: boolean,
+    autoApprove: boolean,
+    baseRef?: string,
+  ) {
     const targetProjectId = taskModalProjectId || activeProjectId;
     const targetProject = projects.find((p) => p.id === targetProjectId);
     if (!targetProject) return;
@@ -505,6 +510,7 @@ export function App() {
       const claimResp = await window.electronAPI.worktreeClaimReserve({
         projectId: targetProject.id,
         taskName: name,
+        baseRef,
       });
 
       if (claimResp.success && claimResp.data) {
@@ -513,6 +519,7 @@ export function App() {
         const createResp = await window.electronAPI.worktreeCreate({
           projectPath: targetProject.path,
           taskName: name,
+          baseRef,
           projectId: targetProject.id,
         });
         if (createResp.success && createResp.data) {
@@ -760,7 +767,13 @@ export function App() {
       )}
 
       {showTaskModal && (
-        <TaskModal onClose={() => setShowTaskModal(false)} onCreate={handleCreateTask} />
+        <TaskModal
+          projectPath={
+            projects.find((p) => p.id === (taskModalProjectId || activeProjectId))?.path ?? ''
+          }
+          onClose={() => setShowTaskModal(false)}
+          onCreate={handleCreateTask}
+        />
       )}
 
       {showSettings && (
