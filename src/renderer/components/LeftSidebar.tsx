@@ -179,7 +179,7 @@ export function LeftSidebar({
               <div key={project.id}>
                 {/* Project row */}
                 <div
-                  className={`group flex items-center gap-1.5 px-2 py-[7px] rounded-md text-sm cursor-pointer transition-all duration-150 ${
+                  className={`group flex items-center gap-1.5 px-2 h-8 rounded-md text-sm cursor-pointer transition-all duration-150 ${
                     isActive
                       ? 'text-foreground font-medium'
                       : 'text-muted-foreground hover:text-foreground'
@@ -208,7 +208,7 @@ export function LeftSidebar({
                   <span className="truncate flex-1">{project.name}</span>
 
                   {projectTasks.length > 0 && (
-                    <span className="text-[10px] text-muted-foreground/30 tabular-nums flex-shrink-0 mr-0.5">
+                    <span className="text-[10px] text-muted-foreground/50 tabular-nums flex-shrink-0 mr-0.5 leading-none">
                       {projectTasks.length}
                     </span>
                   )}
