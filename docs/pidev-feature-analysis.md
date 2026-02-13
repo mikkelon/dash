@@ -2,52 +2,47 @@
 
 A comparison of pi.dev's coding agent features against Dash's current capabilities, filtered for relevance. Each feature includes a description, how it applies to Dash, and a high-level implementation approach.
 
----
-
-## 1. Custom System Prompts (SYSTEM.md)
-
-**What pi.dev offers:** Users can replace or append to the default system prompt on a per-project basis via a `SYSTEM.md` file. This gives fine-grained control over how the coding agent behaves for each project — enforcing coding standards, preferred libraries, architectural patterns, or domain-specific instructions.
-
-**Dash today:** No system prompt customization. Claude Code is spawned with fixed CLI arguments (`-c -r` for resume, `--dangerously-skip-permissions` for auto-approve). The only project-level config Dash writes is `.claude/settings.local.json` containing hook definitions. Any prompt customization is delegated entirely to the user managing their own `CLAUDE.md` files outside of Dash.
-
-**How it could work in Dash:**
-- Add a `systemPrompt` text field to the `projects` table (or a separate `project_settings` table).
-- Expose a "System Prompt" textarea in the Project Settings UI (accessible from the sidebar or settings modal).
-- When spawning Claude Code via `ptyManager.ts`, write the system prompt content to a `CLAUDE.md` file in the task's working directory before launch, or pass it through an environment variable / CLI flag if Claude Code supports one.
-- Support both project-level defaults and per-task overrides.
+> **Removed features:** The following have been struck from the original analysis:
+> - **Custom System Prompts** — Fully superseded by Claude Code's native `CLAUDE.md` support. Worktrees already inherit these files. Adding a parallel system prompt mechanism in Dash would conflict with user-managed `CLAUDE.md` files.
+> - **Extension / Plugin System** — Claude Code now has a native hooks system. Building a second extension layer in Dash would add redundant complexity. Dash's internal `HookServer` already handles activity monitoring; further extensibility should leverage Claude Code's own hook infrastructure.
+> - **Multi-Provider API Key Management** — Dash is purpose-built for Claude Code. Supporting 15+ providers is out of scope.
 
 ---
 
-## 2. Project Instructions (AGENTS.md / Hierarchical Config)
+## 1. Project Instructions (AGENTS.md / Hierarchical Config)
 
 **What pi.dev offers:** Project instructions load from a hierarchy — `~/.pi/agent/`, parent directories, and the current directory. This creates layered instruction sets: global defaults, org-level standards, and project-specific rules, all merged automatically.
 
-**Dash today:** No hierarchical instruction system. Dash is aware of the project directory and git remote but does not manage or surface any instruction files. Users must manually create and maintain `CLAUDE.md` files.
+**Claude Code native support:** Claude Code already reads `CLAUDE.md` from `~/.claude/CLAUDE.md` (global), the project root, and subdirectories — providing the same hierarchical merge. However, users must manage these files manually outside of Dash.
 
-**How it could work in Dash:**
+**Dash today:** No instruction management. Dash is aware of the project directory and git remote but does not surface or manage any `CLAUDE.md` files. Each task's worktree inherits the project's `CLAUDE.md` via git, but Dash provides no UI for viewing, editing, or managing instructions across tasks.
+
+**What Dash would add:**
 - Detect and display existing `CLAUDE.md` files in the project tree (show an indicator in the sidebar if one exists).
 - Provide a UI to view and edit the project's `CLAUDE.md` directly within Dash (a simple editor panel or modal).
-- Support a global instructions file at the Dash app data directory (`~/Library/Application Support/Dash/global-instructions.md`) that gets prepended to every project's context.
-- Show a "Context" tab in settings that previews the merged instruction stack (global + project) so users understand what Claude Code will see.
+- Manage Dash-level global instructions (applied to all projects/tasks) separately from Claude Code's `~/.claude/CLAUDE.md`.
+- Support per-task instruction overrides — write task-specific `CLAUDE.md` content into the worktree before spawning Claude Code.
+- Show a "Context" tab that previews the merged instruction stack (global + project + task) so users understand what Claude Code will see.
 
 ---
 
-## 3. Model Selection and Switching
+## 2. Model Selection and Switching
 
-**What pi.dev offers:** Support for 15+ providers (Anthropic, OpenAI, Google, Azure, Bedrock, Mistral, Groq, etc.) with mid-session model switching via `/model` command, `Ctrl+P` to cycle favorites, and custom provider configuration through `models.json`.
+**What pi.dev offers:** Mid-session model switching via `/model` command, `Ctrl+P` to cycle favorites, and custom model configuration.
 
-**Dash today:** No model selection at all. The model is determined entirely by Claude Code's own configuration. Dash passes `ANTHROPIC_API_KEY` through but provides no UI for choosing or switching models.
+**Claude Code native support:** Claude Code supports `--model` flag at launch and `/model` command mid-session. However, Dash currently passes neither — the model is whatever Claude Code defaults to.
 
-**How it could work in Dash:**
-- Add a model selector dropdown in task creation and/or the task header bar.
-- Pass the selected model via the `ANTHROPIC_MODEL` environment variable (or equivalent Claude Code CLI flag) when spawning the PTY.
+**Dash today:** No model selection UI. `ptyManager.ts` spawns Claude Code with `-c -r` and optionally `--dangerously-skip-permissions`, but never passes a `--model` flag or `ANTHROPIC_MODEL` env var.
+
+**What Dash would add:**
+- Add a model selector dropdown in task creation and/or the task header bar for Anthropic models (Sonnet, Opus, Haiku).
+- Pass the selected model via `--model` flag when spawning the PTY in `ptyManager.startDirectPty()`.
 - Store the preferred model per-project (with per-task override capability) in the database.
 - Show the active model name in the task's status area so users always know which model is running.
-- Start with Anthropic models only (Claude Sonnet, Opus, Haiku) since Dash is purpose-built for Claude Code.
 
 ---
 
-## 4. Session Branching and Tree-Structured History
+## 3. Session Branching and Tree-Structured History
 
 **What pi.dev offers:** Sessions are stored as trees. Users can navigate to any previous conversation point via `/tree` and continue from there, creating branches. All branches live in a single file. This enables non-linear exploration — trying different approaches and comparing results.
 
@@ -62,7 +57,7 @@ A comparison of pi.dev's coding agent features against Dash's current capabiliti
 
 ---
 
-## 5. Session Export and Sharing
+## 4. Session Export and Sharing
 
 **What pi.dev offers:** Export sessions to HTML via `/export` or upload as a GitHub Gist via `/share` for sharing with teammates. The rendered output preserves the conversation structure.
 
@@ -77,54 +72,41 @@ A comparison of pi.dev's coding agent features against Dash's current capabiliti
 
 ---
 
-## 6. Context Compaction and Auto-Summarization
+## 5. Context Usage Monitoring
 
-**What pi.dev offers:** Automatic message compaction when approaching context limits, with customizable summarization strategies (topic-based, code-aware summaries, or alternative models). Extensions can implement custom compaction logic.
+**What pi.dev offers:** Automatic message compaction when approaching context limits, with customizable summarization strategies and visual indicators.
 
-**Dash today:** No context management. Dash delegates the entire conversation lifecycle to Claude Code, which has its own context management. Dash has no visibility into context window usage.
+**Claude Code native support:** Claude Code handles context compaction internally and provides the `/compact` command for manual summarization. The actual compaction is fully handled by Claude Code.
 
-**How it could work in Dash:**
-- Display a context usage indicator in the task view (approximate token count or percentage) by monitoring Claude Code's output for context-related signals.
-- This is lower priority since Claude Code handles its own context, but surfacing the information would help users understand when sessions are getting long.
-- If Dash ever manages conversations directly (rather than through Claude Code's PTY), implement configurable compaction strategies.
+**Dash today:** No visibility into context usage. Dash delegates the entire conversation lifecycle to Claude Code via PTY — it has no insight into how much context has been consumed in a session.
+
+**What Dash would add:**
+- Display a context usage indicator on task cards and in the task header (approximate token count or percentage) by monitoring Claude Code's terminal output for context-related signals (e.g., compaction messages, token counts).
+- Show a visual warning when context is running high, giving users a cue to start a new conversation or manually trigger `/compact`.
+- Surface compaction events in the task's activity timeline so users can see when auto-compaction occurred.
 
 ---
 
-## 7. Prompt Templates
+## 6. Prompt Templates and Commands
 
 **What pi.dev offers:** Reusable prompts stored as Markdown files, expanded by typing `/name`. This streamlines repetitive workflows like code reviews, refactoring patterns, or test generation.
 
-**Dash today:** No template system. Users type everything from scratch or rely on terminal history.
+**Claude Code native support:** Claude Code supports custom slash commands via `.claude/commands/` directories (project-level and user-level). Users can create Markdown files that expand as `/command-name`. However, managing these files requires manual filesystem operations.
 
-**How it could work in Dash:**
-- Add a `prompt_templates` table (id, name, content, projectId nullable for global vs. project-specific).
-- Create a "Templates" section in settings where users can create, edit, and organize templates.
-- Add a template picker (dropdown or `/` command palette) near the terminal input that inserts the template text into the PTY.
-- Ship a few built-in templates (e.g., "Code Review", "Refactor", "Add Tests", "Explain Code") as starting points.
-- Support template variables (e.g., `{{file}}`, `{{branch}}`) that auto-populate from the current task context.
+**Dash today:** No template system. Users type everything from scratch or rely on terminal history. No UI for discovering or managing `.claude/commands/` files.
 
----
-
-## 8. Extension / Plugin System
-
-**What pi.dev offers:** TypeScript extension modules with access to tools, commands, keyboard shortcuts, events, and the full TUI. 50+ example extensions. Enables community-built features like sub-agents, plan mode, permission gates, path protection, SSH execution, and sandboxing.
-
-**Dash today:** No extension system. All functionality is built into the app. The hook server (`HookServer.ts`) provides a narrow integration point (Stop and UserPromptSubmit events) but is not user-extensible.
-
-**How it could work in Dash:**
-- This is a large undertaking. A pragmatic first step would be a **hook/event system** rather than a full plugin framework:
-  - Define lifecycle events: `task:created`, `task:completed`, `session:started`, `session:idle`, `git:committed`, etc.
-  - Allow users to configure shell commands or scripts that run on these events (similar to git hooks).
-  - Store hook configurations per-project in the database.
-- A second phase could introduce a proper extension API:
-  - Extensions as npm packages loaded at startup.
-  - API surface: register commands, add UI panels, listen to events, modify PTY environment.
-  - Extension settings page in the UI.
-- Start small — even project-level shell hooks would cover many use cases (auto-running tests, notifying external systems, triggering CI).
+**What Dash would add:**
+- A **prompt store UI** with a three-tier hierarchy: global (all projects), project-level, and task-level templates.
+- Add a `prompt_templates` table (id, name, content, scope, projectId/taskId) in the database.
+- Create a "Prompts" section accessible from the sidebar or settings where users can create, edit, and organize templates visually.
+- Sync templates to `.claude/commands/` directories in worktrees so they're available as native Claude Code slash commands.
+- Add a template picker (dropdown or command palette) near the terminal input for quick insertion.
+- Ship built-in starter templates (e.g., "Code Review", "Refactor", "Add Tests") that users can customize.
+- Support template variables (e.g., `{{file}}`, `{{branch}}`, `{{task}}`) that auto-populate from the current task context.
 
 ---
 
-## 9. Message Queuing and Steering
+## 7. Message Queuing and Steering
 
 **What pi.dev offers:** Two submission modes while the agent works: `Enter` sends a steering message that interrupts after the current tool completes; `Alt+Enter` queues a follow-up that waits for the agent to finish. This enables real-time course correction vs. batched instructions.
 
@@ -139,14 +121,14 @@ A comparison of pi.dev's coding agent features against Dash's current capabiliti
 
 ---
 
-## 10. Package / Marketplace System
+## 8. Package / Marketplace System
 
 **What pi.dev offers:** Installable bundles combining extensions, skills, prompts, and themes. Distributed via npm or git with version pinning, `pi install`, `pi update`, and `pi list` commands.
 
 **Dash today:** No package system. All functionality is built-in.
 
 **How it could work in Dash:**
-- This depends heavily on whether an extension system (Feature #8) is built first.
+- Without a dedicated extension system (removed — Claude Code has native hooks), this shifts toward a **content marketplace** for prompt templates, project configurations, and themes.
 - A lighter-weight alternative: a **community template gallery** — curated prompt templates and project configurations that users can browse and import.
 - Store importable configurations as JSON/Markdown files in a public GitHub repo.
 - Add an "Import from Gallery" option in the Templates or Settings UI.
@@ -154,22 +136,7 @@ A comparison of pi.dev's coding agent features against Dash's current capabiliti
 
 ---
 
-## 11. Multi-Provider API Key Management
-
-**What pi.dev offers:** Support for multiple authentication methods (API keys and OAuth) across 15+ providers. Stored credentials with easy switching.
-
-**Dash today:** Passes through `ANTHROPIC_API_KEY` from the environment. No UI for managing API keys, and no support for multiple providers.
-
-**How it could work in Dash:**
-- Add an "API Keys" section in Settings with secure storage (Electron's `safeStorage` API for encryption).
-- Support at minimum: Anthropic API key, and optionally AWS Bedrock credentials, Google Vertex credentials (for Claude via other providers).
-- Auto-detect keys from environment variables on first launch and offer to save them.
-- Show key status (valid/invalid/missing) in settings.
-- Pass the appropriate credentials as environment variables when spawning Claude Code.
-
----
-
-## 12. Customizable Themes Beyond Light/Dark
+## 9. Customizable Themes Beyond Light/Dark
 
 **What pi.dev offers:** Themes are distributable as part of packages, suggesting support for custom color schemes, fonts, and terminal styling beyond a simple light/dark toggle.
 
@@ -183,7 +150,7 @@ A comparison of pi.dev's coding agent features against Dash's current capabiliti
 
 ---
 
-## 13. Bookmarks and Message Labeling
+## 10. Bookmarks and Message Labeling
 
 **What pi.dev offers:** Users can bookmark and label important moments in a conversation for easy reference later. Combined with the tree-structured history, this makes long sessions navigable.
 
@@ -203,17 +170,13 @@ Based on impact, user demand, and implementation feasibility:
 
 | Priority | Feature | Rationale |
 |----------|---------|-----------|
-| **P0** | Custom System Prompts | Highest impact, moderate effort. Direct control over agent behavior per project. |
-| **P0** | Model Selection | High demand, low-moderate effort. Basic dropdown + env var. |
-| **P1** | Project Instructions UI | Medium effort. Makes existing CLAUDE.md discoverable and editable. |
-| **P1** | Prompt Templates | Medium effort, high daily utility. Reduces repetitive typing. |
-| **P1** | Message Queuing/Steering | Medium effort. Leverages existing activity monitoring. |
-| **P1** | Session Export | Medium effort. Enables knowledge sharing. |
-| **P2** | API Key Management | Low-medium effort. Better onboarding experience. |
-| **P2** | Session Branching | Higher effort. Requires conversation state management. |
+| **P0** | Model Selection | High demand, low effort. Pass `--model` flag in `ptyManager.startDirectPty()`. |
+| **P0** | Project Instructions UI | High impact, medium effort. Surface and manage `CLAUDE.md` hierarchy across tasks. |
+| **P1** | Prompt Templates & Commands | Medium effort, high daily utility. Manage `.claude/commands/` via UI with global/project/task hierarchy. |
+| **P1** | Message Queuing/Steering | Medium effort. Builds on existing `HookServer` activity monitoring. |
+| **P1** | Session Export | Medium effort. Leverage existing terminal snapshots and xterm serialization. |
+| **P2** | Session Branching | Higher effort. Extend existing `conversations` table with branch tracking. |
+| **P2** | Context Usage Display | Low effort. Monitor PTY output for context signals, display on task cards. |
 | **P2** | Bookmarks | Low effort, useful for long sessions. |
-| **P3** | Hook/Event System | High effort, enables extensibility. |
-| **P3** | Additional Themes | Low effort, nice-to-have. |
-| **P3** | Context Usage Display | Low effort, informational. |
-| **P4** | Extension System | Very high effort. Only justified with significant user base. |
-| **P4** | Package Marketplace | Depends on extension system. Long-term vision. |
+| **P3** | Additional Themes | Low effort, nice-to-have. Extend existing Tailwind dark/light system. |
+| **P4** | Package Marketplace | Content marketplace for templates and themes. No extension system dependency. |
