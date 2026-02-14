@@ -119,13 +119,33 @@ export class TerminalSessionManager {
       }),
     );
 
-    // Shift+Enter → Ctrl+J (multiline input for Claude Code)
     this.terminal.attachCustomKeyEventHandler((e) => {
-      if (e.type === 'keydown' && e.key === 'Enter' && e.shiftKey) {
+      if (e.type !== 'keydown') return true;
+
+      // Shift+Enter → Ctrl+J (multiline input for Claude Code)
+      if (e.key === 'Enter' && e.shiftKey) {
         e.preventDefault();
         window.electronAPI.ptyInput({ id: this.id, data: '\x0A' });
         return false;
       }
+
+      // Cmd+Left → Home (Ctrl+A), Cmd+Right → End (Ctrl+E), Cmd+Backspace → Kill line (Ctrl+U)
+      if (e.metaKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        window.electronAPI.ptyInput({ id: this.id, data: '\x01' });
+        return false;
+      }
+      if (e.metaKey && e.key === 'ArrowRight') {
+        e.preventDefault();
+        window.electronAPI.ptyInput({ id: this.id, data: '\x05' });
+        return false;
+      }
+      if (e.metaKey && e.key === 'Backspace') {
+        e.preventDefault();
+        window.electronAPI.ptyInput({ id: this.id, data: '\x15' });
+        return false;
+      }
+
       return true;
     });
 
