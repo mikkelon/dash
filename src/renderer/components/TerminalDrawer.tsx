@@ -44,9 +44,10 @@ export function TerminalDrawer({ taskId, cwd, collapsed, label = 'Terminal', onC
     setDisplayCwd(cwd);
   }, [cwd]);
 
+  // Attach once and keep alive across collapse/expand
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || collapsed) return;
+    if (!container) return;
 
     const session = sessionRegistry.getOrCreate({
       id: shellId,
@@ -55,10 +56,8 @@ export function TerminalDrawer({ taskId, cwd, collapsed, label = 'Terminal', onC
     });
     session.attach(container);
 
-    // Sync initial cwd from session (may differ if shell already cd'd)
     setDisplayCwd(session.currentCwd);
 
-    // Subscribe to cwd changes via OSC 7
     session.onCwdChange((newCwd) => {
       setDisplayCwd(newCwd);
     });
@@ -66,56 +65,56 @@ export function TerminalDrawer({ taskId, cwd, collapsed, label = 'Terminal', onC
     return () => {
       sessionRegistry.detach(shellId);
     };
-  }, [shellId, cwd, collapsed]);
+  }, [shellId, cwd]);
 
-  // Refit when uncollapsing
+  // Focus terminal when expanding
   useEffect(() => {
     if (!collapsed) {
       const session = sessionRegistry.get(shellId);
       if (session) {
-        // Allow the panel to finish expanding before fitting
         requestAnimationFrame(() => session.focus());
       }
     }
   }, [collapsed, shellId]);
 
-  if (collapsed) {
-    return (
-      <button
-        onClick={onExpand}
-        className="h-full w-full flex items-center gap-2 px-4 text-foreground/80 hover:text-foreground transition-colors"
-        style={{ background: 'hsl(var(--surface-1))' }}
-      >
-        <Terminal size={12} strokeWidth={1.8} />
-        <span className="text-[11px] font-semibold uppercase tracking-[0.08em]">{label}</span>
-        <ChevronUp size={12} strokeWidth={1.8} className="ml-auto" />
-      </button>
-    );
-  }
-
   return (
-    <div className="h-full flex flex-col bg-background">
-      {/* Header */}
-      <div
-        className="flex items-center gap-2 px-3 h-8 flex-shrink-0 border-b border-border/40"
-        style={{ background: 'hsl(var(--surface-1))' }}
-      >
-        <Terminal size={12} strokeWidth={1.8} className="text-foreground/80" />
-        <span className="text-[11px] font-semibold uppercase text-foreground/80 tracking-[0.08em]">
-          {label}
-        </span>
-        <span className="text-[11px] font-mono text-muted-foreground/50 truncate flex-1">
-          {shortenCwd(displayCwd, cwd)}
-        </span>
+    <div className="h-full flex flex-col">
+      {collapsed ? (
         <button
-          onClick={onCollapse}
-          className="p-1 rounded hover:bg-accent text-muted-foreground/40 hover:text-foreground transition-colors"
+          onClick={onExpand}
+          className="h-full w-full flex items-center gap-2 px-4 text-foreground/80 hover:text-foreground transition-colors"
+          style={{ background: 'hsl(var(--surface-1))' }}
         >
-          <ChevronDown size={12} strokeWidth={2} />
+          <Terminal size={12} strokeWidth={1.8} />
+          <span className="text-[11px] font-semibold uppercase tracking-[0.08em]">{label}</span>
+          <ChevronUp size={12} strokeWidth={1.8} className="ml-auto" />
         </button>
-      </div>
-      {/* Terminal */}
-      <div ref={containerRef} className="terminal-container flex-1 min-h-0" />
+      ) : (
+        <div
+          className="flex items-center gap-2 px-3 h-8 flex-shrink-0 border-b border-border/40"
+          style={{ background: 'hsl(var(--surface-1))' }}
+        >
+          <Terminal size={12} strokeWidth={1.8} className="text-foreground/80" />
+          <span className="text-[11px] font-semibold uppercase text-foreground/80 tracking-[0.08em]">
+            {label}
+          </span>
+          <span className="text-[11px] font-mono text-muted-foreground/50 truncate flex-1">
+            {shortenCwd(displayCwd, cwd)}
+          </span>
+          <button
+            onClick={onCollapse}
+            className="p-1 rounded hover:bg-accent text-muted-foreground/40 hover:text-foreground transition-colors"
+          >
+            <ChevronDown size={12} strokeWidth={2} />
+          </button>
+        </div>
+      )}
+      {/* Terminal container always in DOM to avoid re-attach on expand */}
+      <div
+        ref={containerRef}
+        className="terminal-container flex-1 min-h-0"
+        style={collapsed ? { height: 0, overflow: 'hidden' } : undefined}
+      />
     </div>
   );
 }

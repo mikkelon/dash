@@ -38,6 +38,9 @@ export class TerminalSessionManager {
   private wheelHandler: ((e: WheelEvent) => void) | null = null;
   private _currentCwd: string;
   private onCwdChangeCallback: ((cwd: string) => void) | null = null;
+  private fitDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastPtyCols = 0;
+  private lastPtyRows = 0;
   readonly shellOnly: boolean;
   private themeId: string;
   constructor(opts: {
@@ -192,8 +195,15 @@ export class TerminalSessionManager {
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();
     }
-    this.resizeObserver = new ResizeObserver(() => {
-      this.fit();
+    this.resizeObserver = new ResizeObserver((entries) => {
+      // Skip when container is collapsed/hidden to avoid resizing PTY to 0 rows
+      const rect = entries[0]?.contentRect;
+      if (!rect || rect.height < 10) return;
+      if (this.fitDebounceTimer) clearTimeout(this.fitDebounceTimer);
+      this.fitDebounceTimer = setTimeout(() => {
+        this.fitDebounceTimer = null;
+        this.fit();
+      }, 100);
     });
     this.resizeObserver.observe(container);
 
@@ -351,6 +361,10 @@ export class TerminalSessionManager {
       clearTimeout(this.readyFallbackTimer);
       this.readyFallbackTimer = null;
     }
+    if (this.fitDebounceTimer) {
+      clearTimeout(this.fitDebounceTimer);
+      this.fitDebounceTimer = null;
+    }
 
     // Remove wheel listener
     if (this.currentContainer && this.wheelHandler) {
@@ -388,6 +402,10 @@ export class TerminalSessionManager {
     if (this.snapshotDebounceTimer) {
       clearTimeout(this.snapshotDebounceTimer);
       this.snapshotDebounceTimer = null;
+    }
+    if (this.fitDebounceTimer) {
+      clearTimeout(this.fitDebounceTimer);
+      this.fitDebounceTimer = null;
     }
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();
@@ -486,6 +504,10 @@ export class TerminalSessionManager {
       this.fitAddon.fit();
       const dims = this.fitAddon.proposeDimensions();
       if (dims && dims.cols > 0 && dims.rows > 0) {
+        // Skip redundant PTY resizes to avoid SIGWINCH prompt redraw
+        if (dims.cols === this.lastPtyCols && dims.rows === this.lastPtyRows) return;
+        this.lastPtyCols = dims.cols;
+        this.lastPtyRows = dims.rows;
         window.electronAPI.ptyResize({
           id: this.id,
           cols: dims.cols,
