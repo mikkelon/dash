@@ -130,9 +130,7 @@ function writeHookSettings(cwd: string, ptyId: string): void {
   const curlBase = `curl -s --connect-timeout 2 http://127.0.0.1:${port}`;
 
   const hookSettings: Record<string, unknown[]> = {
-    Stop: [
-      { hooks: [{ type: 'command', command: `${curlBase}/hook/stop?ptyId=${ptyId}` }] },
-    ],
+    Stop: [{ hooks: [{ type: 'command', command: `${curlBase}/hook/stop?ptyId=${ptyId}` }] }],
     UserPromptSubmit: [
       { hooks: [{ type: 'command', command: `${curlBase}/hook/busy?ptyId=${ptyId}` }] },
     ],
@@ -286,7 +284,12 @@ export async function startDirectPty(options: {
   } catch {
     // Best effort
   }
-  return { reattached: false, isDirectSpawn: true, hasTaskContext: !!taskContextMeta, taskContextMeta };
+  return {
+    reattached: false,
+    isDirectSpawn: true,
+    hasTaskContext: !!taskContextMeta,
+    taskContextMeta,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -354,6 +357,9 @@ __dash_prompt_precmd() {
 }
 
 add-zsh-hook precmd __dash_prompt_precmd
+# Set PROMPT immediately so the first prompt is styled — precmd may not
+# fire before the initial prompt in all zsh configurations.
+__dash_prompt_precmd
 `;
 
 let shellConfigDir: string | null = null;
