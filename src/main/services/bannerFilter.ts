@@ -13,10 +13,14 @@ const SEVEN_COLOR = '\x1b[38;2;217;119;87m';
 const B = '[^\\n\\u2580-\\u259F]{0,40}?';
 
 // Shield line 1: ▐▛███▜▌ (with space before ▐)
-const LINE1_RE = new RegExp(` ${B}\\u2590${B}\\u259B${B}\\u2588${B}\\u2588${B}\\u2588${B}\\u259C${B}\\u258C`);
+const LINE1_RE = new RegExp(
+  ` ${B}\\u2590${B}\\u259B${B}\\u2588${B}\\u2588${B}\\u2588${B}\\u259C${B}\\u258C`,
+);
 
 // Shield line 2: ▝▜█████▛▘
-const LINE2_RE = new RegExp(`\\u259D${B}\\u259C${B}\\u2588${B}\\u2588${B}\\u2588${B}\\u2588${B}\\u2588${B}\\u259B${B}\\u2598`);
+const LINE2_RE = new RegExp(
+  `\\u259D${B}\\u259C${B}\\u2588${B}\\u2588${B}\\u2588${B}\\u2588${B}\\u2588${B}\\u259B${B}\\u2598`,
+);
 
 // Shield line 3: ▘▘ ▝▝
 const LINE3_RE = new RegExp(`\\u2598${B}\\u2598${B}\\u259D${B}\\u259D`);
@@ -35,10 +39,15 @@ const BUFFER_MAX_BYTES = 16384;
 export function createBannerFilter(forward: (data: string) => void): (data: string) => void {
   let buffer = '';
   let done = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
 
   function flush(content: string) {
     done = true;
     buffer = '';
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
     forward(content);
   }
 
@@ -50,14 +59,29 @@ export function createBannerFilter(forward: (data: string) => void): (data: stri
 
     buffer += data;
 
+    // Start deadline timer on first chunk — if the shield patterns aren't
+    // detected within 2s (e.g. Claude shows a trust dialog instead of the
+    // normal banner), flush the buffer as-is so the terminal isn't blank.
+    if (!timer) {
+      timer = setTimeout(() => {
+        if (!done && buffer) flush(buffer);
+      }, 2000);
+    }
+
     // Check if all 3 shield patterns are present
     const hasAll = LINE1_RE.test(buffer) && LINE2_RE.test(buffer) && LINE3_RE.test(buffer);
 
     if (hasAll) {
       // All shield lines detected — apply replacements and flush
       let result = buffer;
-      result = result.replace(LINE1_RE, `${SEVEN_COLOR}\u259B\u2598\u258C\u258C\u258C\u258C  \u2580\u258C\u258C${RESET}`);
-      result = result.replace(LINE2_RE, `${SEVEN_COLOR}\u2584\u258C\u2599\u258C\u259A\u2598\u2597 \u2588\u258C\u258C${RESET} `);
+      result = result.replace(
+        LINE1_RE,
+        `${SEVEN_COLOR}\u259B\u2598\u258C\u258C\u258C\u258C  \u2580\u258C\u258C${RESET}`,
+      );
+      result = result.replace(
+        LINE2_RE,
+        `${SEVEN_COLOR}\u2584\u258C\u2599\u258C\u259A\u2598\u2597 \u2588\u258C\u258C${RESET} `,
+      );
       result = result.replace(LINE3_RE, `${SEVEN_COLOR}\u2584\u258C${RESET}      `);
       flush(result);
       return;
