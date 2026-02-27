@@ -32,10 +32,21 @@ This builds the app, ad-hoc signs it, and copies `Dash.app` to `/Applications`.
 
 ## Prerequisites
 
+### All platforms
+
 - Node.js 22+
 - [pnpm](https://pnpm.io/)
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) (`npm install -g @anthropic-ai/claude-code`)
 - Git
+
+### macOS
+
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) (`npm install -g @anthropic-ai/claude-code`)
+
+### Windows
+
+- [WSL 2](https://learn.microsoft.com/en-us/windows/wsl/install) with a Linux distribution
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed inside WSL
+- [Git for Windows](https://git-scm.com/download/win)
 
 ## Setup
 
@@ -45,6 +56,8 @@ pnpm rebuild  # rebuilds native modules (node-pty, better-sqlite3)
 ```
 
 ## Development
+
+### macOS
 
 ```bash
 pnpm dev
@@ -59,11 +72,36 @@ pnpm build:main
 npx electron dist/main/main/entry.js --dev
 ```
 
+### Windows (WSL)
+
+On Windows, Dash runs as a native Windows app but spawns Claude Code CLI inside WSL.
+
+**Prerequisites:**
+
+1. [WSL 2](https://learn.microsoft.com/en-us/windows/wsl/install) with a Linux distribution (e.g., Ubuntu)
+2. Claude Code CLI installed **inside WSL**: `wsl -d Ubuntu -- npm install -g @anthropic-ai/claude-code`
+3. [Git for Windows](https://git-scm.com/download/win) (used for git operations in the UI)
+
+**Running in dev:**
+
+```bash
+pnpm dev
+```
+
+The app automatically detects Windows and spawns terminal sessions via `wsl.exe`. Projects use Windows paths (e.g., `C:\Users\you\project`) which are translated to WSL paths (`/mnt/c/Users/you/project`) when spawning Claude.
+
+**Notes:**
+- Git operations (status, diff, stage, commit) use Git for Windows for speed
+- Claude CLI runs inside your WSL distribution with full Unix environment
+- The default WSL distribution is used automatically; configure a specific one in Settings > WSL (coming soon)
+
 ## Build
 
 ```bash
 pnpm build              # compile both main + renderer
 pnpm package:mac        # build + package as macOS .dmg
+pnpm package:win        # build + package as Windows installer + zip
+pnpm package:all        # build for both platforms
 ```
 
 Output goes to `release/`.
@@ -145,9 +183,17 @@ All keybindings are customizable in Settings > Keybindings.
 
 ## Data storage
 
-- **Database**: `~/Library/Application Support/Dash/app.db` (macOS)
+### macOS
+
+- **Database**: `~/Library/Application Support/Dash/app.db`
 - **Terminal snapshots**: `~/Library/Application Support/Dash/terminal-snapshots/`
 - **Worktrees**: `{project}/../worktrees/{task-slug}/`
+
+### Windows
+
+- **Database**: `%APPDATA%\Dash\app.db`
+- **Terminal snapshots**: `%APPDATA%\Dash\terminal-snapshots\`
+- **Worktrees**: `{project}\..\worktrees\{task-slug}\`
 
 ## Acknowledgements
 
