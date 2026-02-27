@@ -6,6 +6,8 @@ import { promisify } from 'util';
 import { type WebContents, app } from 'electron';
 import { activityMonitor } from './ActivityMonitor';
 import { hookServer } from './HookServer';
+import { WslService } from './WslService';
+import { toWslPath } from '../utils/pathTranslation';
 
 const execFileAsync = promisify(execFile);
 
@@ -53,6 +55,11 @@ import { remoteControlService } from './remoteControlService';
 let cachedClaudePath: string | null = null;
 
 async function findClaudePath(): Promise<string | null> {
+  // On Windows, we spawn via WSL instead
+  if (process.platform === 'win32') {
+    return null;
+  }
+
   if (cachedClaudePath) return cachedClaudePath;
 
   // 1. Check the startup-detected cache from main.ts
@@ -133,6 +140,44 @@ function buildDirectEnv(isDark: boolean): Record<string, string> {
       env[key] = process.env[key]!;
     }
   }
+
+  return env;
+}
+
+/**
+ * Build minimal environment for WSL spawn on Windows.
+ */
+function buildWslEnv(isDark: boolean): Record<string, string> {
+  const env: Record<string, string> = {
+    TERM: 'xterm-256color',
+    COLORTERM: 'truecolor',
+    TERM_PROGRAM: 'dash',
+    // Tell CLI apps about terminal background (rxvt convention)
+    // Format: "fg;bg" where higher values = lighter colors
+    COLORFGBG: isDark ? '15;0' : '0;15',
+  };
+
+  // Auth passthrough
+  const authVars = [
+    'ANTHROPIC_API_KEY',
+    'GH_TOKEN',
+    'GITHUB_TOKEN',
+    'HTTP_PROXY',
+    'HTTPS_PROXY',
+    'NO_PROXY',
+    'http_proxy',
+    'https_proxy',
+    'no_proxy',
+  ];
+
+  for (const key of authVars) {
+    if (process.env[key]) {
+      env[key] = process.env[key]!;
+    }
+  }
+
+  // Add WSLENV to pass environment variables into WSL
+  env.WSLENV = authVars.join(':');
 
   return env;
 }
@@ -311,6 +356,32 @@ export async function startDirectPty(options: {
     return { reattached: true, isDirectSpawn: true, hasTaskContext: false, taskContextMeta: null };
   }
 
+  // Branch by platform
+  if (process.platform === 'win32') {
+    return spawnViaWsl(options);
+  } else {
+    return spawnDirectUnix(options);
+  }
+}
+
+/**
+ * Spawn Claude CLI directly on Unix (macOS/Linux).
+ */
+async function spawnDirectUnix(options: {
+  id: string;
+  cwd: string;
+  cols: number;
+  rows: number;
+  autoApprove?: boolean;
+  resume?: boolean;
+  isDark?: boolean;
+  sender?: WebContents;
+}): Promise<{
+  reattached: boolean;
+  isDirectSpawn: boolean;
+  hasTaskContext: boolean;
+  taskContextMeta: { issueNumbers: number[]; gitRemote?: string } | null;
+}> {
   const pty = getPty();
   const claudePath = await findClaudePath();
 
@@ -336,6 +407,117 @@ export async function startDirectPty(options: {
     cwd: options.cwd,
     env,
   });
+
+  const record: PtyRecord = {
+    proc,
+    cwd: options.cwd,
+    isDirectSpawn: true,
+    owner: options.sender || null,
+  };
+
+  ptys.set(options.id, record);
+  activityMonitor.register(options.id, proc.pid, true);
+
+  // Forward output to renderer, replacing the Claude logo with "7" art
+  const bannerFilter = createBannerFilter((filtered: string) => {
+    if (record.owner && !record.owner.isDestroyed()) {
+      record.owner.send(`pty:data:${options.id}`, filtered);
+    }
+  });
+
+  proc.onData((data: string) => {
+    bannerFilter(data);
+    remoteControlService.onPtyData(options.id, data);
+  });
+
+  proc.onExit(({ exitCode, signal }: { exitCode: number; signal?: number }) => {
+    // Skip if this PTY was replaced by a new spawn (kill+restart on reattach)
+    if (ptys.get(options.id) !== record) return;
+    activityMonitor.unregister(options.id);
+    remoteControlService.unregister(options.id);
+    if (record.owner && !record.owner.isDestroyed()) {
+      record.owner.send(`pty:exit:${options.id}`, { exitCode, signal });
+    }
+    ptys.delete(options.id);
+  });
+
+  const contextPath = path.join(options.cwd, '.claude', 'task-context.json');
+  let taskContextMeta: { issueNumbers: number[]; gitRemote?: string } | null = null;
+  try {
+    if (fs.existsSync(contextPath)) {
+      const parsed = JSON.parse(fs.readFileSync(contextPath, 'utf-8'));
+      taskContextMeta = parsed.meta ?? null;
+    }
+  } catch {
+    // Best effort
+  }
+  return {
+    reattached: false,
+    isDirectSpawn: true,
+    hasTaskContext: !!taskContextMeta,
+    taskContextMeta,
+  };
+}
+
+/**
+ * Spawn Claude CLI via WSL on Windows.
+ */
+async function spawnViaWsl(options: {
+  id: string;
+  cwd: string;
+  cols: number;
+  rows: number;
+  autoApprove?: boolean;
+  resume?: boolean;
+  isDark?: boolean;
+  sender?: WebContents;
+}): Promise<{
+  reattached: boolean;
+  isDirectSpawn: boolean;
+  hasTaskContext: boolean;
+  taskContextMeta: { issueNumbers: number[]; gitRemote?: string } | null;
+}> {
+  const pty = getPty();
+
+  // Get WSL distribution
+  let distro = WslService.getSelectedDistribution();
+  if (!distro) {
+    const distros = await WslService.listDistributions();
+    const defaultDistro = distros.find((d) => d.isDefault);
+    distro = defaultDistro?.name || distros[0]?.name;
+    if (!distro) {
+      throw new Error('No WSL distribution found. Install one with: wsl --install -d Ubuntu');
+    }
+  }
+
+  // Convert Windows path to WSL path
+  const wslCwd = toWslPath(options.cwd);
+
+  // Build args for Claude CLI
+  const claudeArgs: string[] = [];
+  if (options.resume) {
+    claudeArgs.push('-c', '-r');
+  }
+  if (options.autoApprove) {
+    claudeArgs.push('--dangerously-skip-permissions');
+  }
+
+  const env = buildWslEnv(options.isDark ?? true);
+
+  writeHookSettings(options.cwd, options.id);
+
+  // Spawn wsl.exe with claude command
+  const proc = pty.spawn(
+    'wsl.exe',
+    ['-d', distro, '--cd', wslCwd, '--', 'claude', ...claudeArgs],
+    {
+      name: 'xterm-256color',
+      cols: options.cols,
+      rows: options.rows,
+      cwd: options.cwd, // Windows cwd for wsl.exe itself
+      env,
+    },
+  );
 
   const record: PtyRecord = {
     proc,
@@ -507,29 +689,56 @@ export async function startPty(options: {
 
   const pty = getPty();
 
-  const shell = process.env.SHELL || '/bin/bash';
-  const args = ['-il']; // Login + interactive
+  let proc: any;
 
-  // Clean environment for shell
-  const env = { ...process.env };
-  // Remove Electron packaging artifacts
-  delete env.ELECTRON_RUN_AS_NODE;
-  delete env.ELECTRON_NO_ATTACH_CONSOLE;
-  // Enable macOS zsh OSC 7 cwd reporting (sources /etc/zshrc_Apple_Terminal)
-  env.TERM_PROGRAM = 'Apple_Terminal';
+  if (process.platform === 'win32') {
+    // Windows: spawn bash via WSL
+    let distro = WslService.getSelectedDistribution();
+    if (!distro) {
+      const distros = await WslService.listDistributions();
+      const defaultDistro = distros.find((d) => d.isDefault);
+      distro = defaultDistro?.name || distros[0]?.name;
+      if (!distro) {
+        throw new Error('No WSL distribution found. Install one with: wsl --install -d Ubuntu');
+      }
+    }
 
-  // Inject custom prompt for zsh via ZDOTDIR
-  if (shell.endsWith('/zsh') || shell === 'zsh') {
-    env.ZDOTDIR = ensureShellConfig();
+    const wslCwd = toWslPath(options.cwd);
+    const env = buildWslEnv(true);
+
+    proc = pty.spawn('wsl.exe', ['-d', distro, '--cd', wslCwd, '--', 'bash', '-l'], {
+      name: 'xterm-256color',
+      cols: options.cols,
+      rows: options.rows,
+      cwd: options.cwd,
+      env,
+    });
+  } else {
+    // macOS/Linux: spawn shell directly
+    const shell = process.env.SHELL || '/bin/bash';
+    const args = ['-il']; // Login + interactive
+
+    // Clean environment for shell
+    const env = { ...process.env };
+    // Remove Electron packaging artifacts
+    delete env.ELECTRON_RUN_AS_NODE;
+    delete env.ELECTRON_NO_ATTACH_CONSOLE;
+    // Enable macOS zsh OSC 7 cwd reporting (sources /etc/zshrc_Apple_Terminal)
+    env.TERM_PROGRAM = 'Apple_Terminal';
+
+    // Inject custom prompt for zsh via ZDOTDIR
+    if (shell.endsWith('/zsh') || shell === 'zsh') {
+      env.ZDOTDIR = ensureShellConfig();
+    }
+
+    proc = pty.spawn(shell, args, {
+      name: 'xterm-256color',
+      cols: options.cols,
+      rows: options.rows,
+      cwd: options.cwd,
+      env: env as Record<string, string>,
+    });
   }
-
-  const proc = pty.spawn(shell, args, {
-    name: 'xterm-256color',
-    cols: options.cols,
-    rows: options.rows,
-    cwd: options.cwd,
-    env: env as Record<string, string>,
-  });
 
   const record: PtyRecord = {
     proc,
