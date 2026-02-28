@@ -1,6 +1,5 @@
 import { app, BrowserWindow, dialog } from 'electron';
 import * as path from 'path';
-import * as url from 'url';
 import * as os from 'os';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -81,27 +80,68 @@ if (!gotLock) {
 let mainWindow: BrowserWindow | null = null;
 let splashWindow: BrowserWindow | null = null;
 
-function createSplashWindow(): BrowserWindow {
+function createSplashWindow(initialStatus: string = 'Starting WSL...'): BrowserWindow {
   const splash = new BrowserWindow({
     width: 300,
     height: 150,
     frame: false,
     resizable: false,
     alwaysOnTop: true,
-    transparent: false,
     backgroundColor: '#1a1a1a',
-    webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
-    },
+    show: false,
   });
 
-  splash.loadFile(path.join(__dirname, 'splash.html'));
+  // Inline HTML - no external file needed
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          background: #1a1a1a;
+          color: #e0e0e0;
+          height: 100vh;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          -webkit-app-region: drag;
+          user-select: none;
+        }
+        .spinner {
+          width: 32px;
+          height: 32px;
+          border: 3px solid #333;
+          border-top-color: #7c3aed;
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+          margin-bottom: 16px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        #status { font-size: 14px; color: #888; }
+      </style>
+    </head>
+    <body>
+      <div class="spinner"></div>
+      <div id="status">${initialStatus}</div>
+    </body>
+    </html>
+  `;
+
+  splash.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+  splash.once('ready-to-show', () => splash.show());
   return splash;
 }
 
 function updateSplashStatus(message: string): void {
-  splashWindow?.webContents.send('splash:status', message);
+  splashWindow?.webContents
+    .executeJavaScript(
+      `document.getElementById('status').textContent = ${JSON.stringify(message)};`,
+    )
+    .catch(() => {});
 }
 
 app.whenReady().then(async () => {
