@@ -506,16 +506,21 @@ async function spawnViaWsl(options: {
 
   writeHookSettings(options.cwd, options.id);
 
-  // Spawn wsl.exe with claude command
-  // Use winpty (useConpty: false) to avoid ConPTY/WSL handle type mismatch errors
-  const proc = pty.spawn('wsl.exe', ['-d', distro, '--cd', wslCwd, '--', 'claude', ...claudeArgs], {
+  // Spawn bash via WSL, then send claude command via stdin
+  // This avoids ConPTY/WSL handle type mismatch errors
+  const proc = pty.spawn('wsl.exe', ['-d', distro, '--cd', wslCwd, '--', 'bash', '-l'], {
     name: 'xterm-256color',
     cols: options.cols,
     rows: options.rows,
     cwd: options.cwd, // Windows cwd for wsl.exe itself
     env,
-    useConpty: false,
   });
+
+  // Build the claude command and send it to bash
+  const claudeCommand = ['claude', ...claudeArgs].join(' ');
+  setTimeout(() => {
+    proc.write(`${claudeCommand}\n`);
+  }, 100);
 
   const record: PtyRecord = {
     proc,
@@ -704,14 +709,12 @@ export async function startPty(options: {
     const wslCwd = toWslPath(options.cwd);
     const env = buildWslEnv(true);
 
-    // Use winpty (useConpty: false) to avoid ConPTY/WSL handle type mismatch errors
     proc = pty.spawn('wsl.exe', ['-d', distro, '--cd', wslCwd, '--', 'bash', '-l'], {
       name: 'xterm-256color',
       cols: options.cols,
       rows: options.rows,
       cwd: options.cwd,
       env,
-      useConpty: false,
     });
   } else {
     // macOS/Linux: spawn shell directly
