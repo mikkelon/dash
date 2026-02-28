@@ -133,6 +133,7 @@ export class WslService {
 
   /**
    * Detect if Claude CLI is installed in the specified WSL distribution.
+   * Uses WslSessionService if available (faster), falls back to execFileAsync.
    * @param distro The WSL distribution name to check
    * @returns Detection result with installation status, version, and path
    */
@@ -140,7 +141,29 @@ export class WslService {
     distro: string,
   ): Promise<{ installed: boolean; version: string | null; path: string | null }> {
     try {
-      // First, try to find the Claude CLI path using 'which'
+      // Import WslSessionService dynamically to avoid circular deps
+      const { WslSessionService } = await import('./WslSessionService');
+      const session = WslSessionService.getInstance();
+
+      if (session.isReady()) {
+        // Use persistent session (faster, avoids cold start)
+        const { stdout: whichOutput, exitCode } = await session.exec('which claude');
+
+        if (exitCode !== 0 || !whichOutput.trim()) {
+          return { installed: false, version: null, path: null };
+        }
+
+        const claudePath = whichOutput.trim();
+
+        try {
+          const { stdout: versionOutput } = await session.exec('claude --version');
+          return { installed: true, version: versionOutput.trim(), path: claudePath };
+        } catch {
+          return { installed: true, version: null, path: claudePath };
+        }
+      }
+
+      // Fallback to execFileAsync (pre-session or non-Windows)
       const { stdout: whichOutput } = await execFileAsync(
         'wsl.exe',
         ['-d', distro, '--', 'which', 'claude'],

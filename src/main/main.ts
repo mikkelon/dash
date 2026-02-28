@@ -1,5 +1,6 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, dialog } from 'electron';
 import * as path from 'path';
+import * as url from 'url';
 import * as os from 'os';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -78,8 +79,82 @@ if (!gotLock) {
 
 // ── App Ready ─────────────────────────────────────────────────
 let mainWindow: BrowserWindow | null = null;
+let splashWindow: BrowserWindow | null = null;
+
+function createSplashWindow(): BrowserWindow {
+  const splash = new BrowserWindow({
+    width: 300,
+    height: 150,
+    frame: false,
+    resizable: false,
+    alwaysOnTop: true,
+    transparent: false,
+    backgroundColor: '#1a1a1a',
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false,
+    },
+  });
+
+  splash.loadFile(path.join(__dirname, 'splash.html'));
+  return splash;
+}
+
+function updateSplashStatus(message: string): void {
+  splashWindow?.webContents.send('splash:status', message);
+}
 
 app.whenReady().then(async () => {
+  // Windows: Initialize WSL session before anything else
+  if (process.platform === 'win32') {
+    // Show splash screen
+    splashWindow = createSplashWindow();
+
+    try {
+      const { WslService } = await import('./services/WslService');
+      const { WslSessionService } = await import('./services/WslSessionService');
+
+      // Get distro
+      updateSplashStatus('Detecting WSL distributions...');
+      let distro = WslService.getSelectedDistribution();
+      if (!distro) {
+        const distros = await WslService.listDistributions();
+        const defaultDistro = distros.find((d) => d.isDefault);
+        distro = defaultDistro?.name || distros[0]?.name;
+      }
+
+      if (!distro) {
+        splashWindow?.close();
+        dialog.showErrorBox(
+          'No WSL Distribution Found',
+          'Please install a WSL distribution.\n\nRun "wsl --install -d Ubuntu" in PowerShell.',
+        );
+        app.quit();
+        return;
+      }
+
+      // Initialize persistent session
+      updateSplashStatus('Starting WSL...');
+      await WslSessionService.initialize(distro, 120000); // 2 minute timeout
+
+      // Detect Claude CLI
+      updateSplashStatus('Detecting Claude CLI...');
+      await detectClaudeCli();
+
+      // Close splash
+      splashWindow?.close();
+      splashWindow = null;
+    } catch (err) {
+      splashWindow?.close();
+      dialog.showErrorBox(
+        'WSL Failed to Start',
+        `Could not start WSL within 2 minutes.\n\nPlease ensure WSL is installed and working.\nRun "wsl --status" in PowerShell to diagnose.\n\nError: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      app.quit();
+      return;
+    }
+  }
+
   // Initialize database
   const { DatabaseService } = await import('./services/DatabaseService');
   await DatabaseService.initialize();
@@ -121,8 +196,10 @@ app.whenReady().then(async () => {
     }
   }, 2000);
 
-  // Detect Claude CLI (cache for settings UI)
-  detectClaudeCli();
+  // Detect Claude CLI (cache for settings UI) - skip on Windows, already done in splash
+  if (process.platform !== 'win32') {
+    detectClaudeCli();
+  }
 });
 
 // ── Claude CLI Detection ──────────────────────────────────────
@@ -206,6 +283,16 @@ app.on('before-quit', async () => {
     await new Promise((resolve) => setTimeout(resolve, 200));
   } catch {
     // Best effort
+  }
+
+  // Shutdown WSL session (Windows only)
+  if (process.platform === 'win32') {
+    try {
+      const { WslSessionService } = await import('./services/WslSessionService');
+      WslSessionService.getInstance().shutdown();
+    } catch {
+      // Best effort
+    }
   }
 
   // Stop hook server
